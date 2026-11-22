@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';import {grades,categories,filterPosts,safeFileName,validFile} from './logic.js';import './style.css';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';import {grades,categories,filterPosts,safeFileName,validFile} from './logic.js';
 const url=import.meta.env.VITE_SUPABASE_URL,key=import.meta.env.VITE_SUPABASE_ANON_KEY;const configured=!!(url&&key&&!url.includes('YOUR_PROJECT'));const db=configured?createClient(url,key):null;
 const demo=[{id:'demo1',title:'Kế hoạch chủ nhiệm tháng 10 lớp 1',description:'Kế hoạch chủ nhiệm tháng 10 lớp 1',grade:'Lớp 1',category:'Kế hoạch chủ nhiệm',image_url:'',file_path:null},{id:'demo2',title:'Kế hoạch chủ nhiệm tháng 9 - Năm học 2026–2027',description:'Tài liệu dành cho giáo viên tiểu học',grade:'Lớp 1',category:'Kế hoạch chủ nhiệm',image_url:'',file_path:null},{id:'demo3',title:'Kế hoạch chủ nhiệm năm học 2026–2027',description:'Mẫu kế hoạch chủ nhiệm năm học',grade:'Lớp 1',category:'Kế hoạch chủ nhiệm',image_url:'',file_path:null}];
 let posts=[],user=null,isAdmin=false,selected=null,filters={q:'',grade:'',category:''},adminOpen=false;
