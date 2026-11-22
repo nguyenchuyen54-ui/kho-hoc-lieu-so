@@ -21,3 +21,4 @@ async function savePost(e,p){e.preventDefault();const form=e.target,f=new FormDa
 async function removePost(p){if(!confirm('Bạn có chắc muốn xóa bài này?'))return;const {error}=await db.from('posts').delete().eq('id',p.id);if(error){alert(error.message);return}if(p.file_path)await db.storage.from('documents').remove([p.file_path]);if(p.image_path)await db.storage.from('covers').remove([p.image_path]);closeModal();await loadPosts();render()}
 async function loadPosts(){if(!db){posts=demo;return}const {data,error}=await db.from('posts').select('*').order('created_at',{ascending:false});if(error){posts=[];console.error(error);return}posts=data||[]}
 async function init(){await refreshAuth();await loadPosts();render()}init();
+
