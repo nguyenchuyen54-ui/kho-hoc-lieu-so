@@ -14,7 +14,31 @@ async function openPost(id){const p=posts.find(x=>String(x.id)===id);if(!p)retur
 async function fileAction(p,download){const msg=document.querySelector('#msg');if(!db||!p.file_path){msg.textContent='Bài mẫu chưa có tệp đính kèm.';return}const {data,error}=await db.storage.from('documents').createSignedUrl(p.file_path,120,download?{download:true}:{});if(error){msg.textContent='Không mở được tệp: '+error.message;return}window.open(data.signedUrl,'_blank','noopener,noreferrer')}
 function openLogin(){if(!db){showModal('<h2>Chưa kết nối Supabase</h2><p>Hãy cấu hình thông tin dự án theo README.</p>');return}showModal('<h2>Đăng nhập quản trị</h2><form id="loginform"><label>Email</label><input type="email" name="email" required/><label>Mật khẩu</label><input type="password" name="password" required/><button class="primary">Đăng nhập</button><p id="msg"></p></form>');document.querySelector('#loginform').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)document.querySelector('#msg').textContent=error.message;else{closeModal();await refreshAuth();render();if(isAdmin)openAdmin();else alert('Tài khoản này không có quyền quản trị.')}}}
 async function logout(){await db.auth.signOut();await refreshAuth();render()}
-async function refreshAuth(){if(!db)return;const {data:{user:u}}=await db.auth.getUser();user=u;isAdmin=false;if(u){const {data}=await db.from('admins').select('user_id').eq('user_id',u.id).maybeSingle();isAdmin=!!data}}
+
+async function refreshAuth() {
+  if (!db) return;
+
+  const { data: { user: currentUser }, error: authError } =
+    await db.auth.getUser();
+
+  user = currentUser;
+  isAdmin = false;
+
+  if (authError || !user) return;
+
+  const { data, error } = await db
+    .from('admins')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (error) {
+    console.error('Lỗi kiểm tra quyền quản trị:', error);
+    return;
+  }
+
+  isAdmin = !!data;
+}
+
 function openAdmin(){if(!isAdmin)return;showModal(`<h2>Quản trị học liệu</h2><p>Đã đăng nhập: ${esc(user.email)}</p><button id="new" class="primary">＋ Đăng bài mới</button> <button id="signout">Đăng xuất</button><p>Để sửa hoặc xóa, hãy mở một bài đăng trên trang chủ.</p>`);document.querySelector('#new').onclick=()=>openEditor();document.querySelector('#signout').onclick=async()=>{closeModal();await logout()}}
 function openEditor(p=null){if(!isAdmin)return;showModal(`<h2>${p?'Chỉnh sửa':'Đăng'} tài liệu</h2><form id="editor"><label>Tiêu đề *</label><input name="title" required maxlength="180" value="${esc(p?.title||'')}"/><label>Mô tả</label><textarea name="description" rows="3">${esc(p?.description||'')}</textarea><label>Lớp</label><select name="grade">${grades.map(g=>`<option ${p?.grade===g?'selected':''}>${g}</option>`).join('')}</select><label>Danh mục</label><select name="category">${categories.map(c=>`<option ${p?.category===c?'selected':''}>${c}</option>`).join('')}</select><label>Ảnh đại diện (JPG, PNG, WEBP; tối đa 5 MB)</label><input type="file" name="image" accept="image/jpeg,image/png,image/webp"/><label>Tài liệu (PDF, Word, PPT, Excel, ảnh, MP4; tối đa 20 MB)</label><input type="file" name="document" ${p?'':'required'} accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.mp4"/><button class="primary" id="save">${p?'Lưu thay đổi':'Đăng bài'}</button><p id="msg"></p></form>`);document.querySelector('#editor').onsubmit=e=>savePost(e,p)}
 async function savePost(e,p){e.preventDefault();const form=e.target,f=new FormData(form),file=f.get('document'),img=f.get('image'),msg=document.querySelector('#msg'),button=document.querySelector('#save');if(file?.size&&!validFile(file)){msg.textContent='Tệp phải thuộc định dạng được hỗ trợ và không quá 20 MB.';return}if(img?.size&&(img.size>5*1024*1024||!['image/jpeg','image/png','image/webp'].includes(img.type))){msg.textContent='Ảnh phải là JPG, PNG hoặc WEBP và không quá 5 MB.';return}button.disabled=true;msg.textContent='Đang lưu, vui lòng chờ...';let filePath=p?.file_path||null,imagePath=p?.image_path||null,imageUrl=p?.image_url||null;let uploaded=[];try{if(file?.size){filePath=`${crypto.randomUUID()}/${safeFileName(file.name)}`;const r=await db.storage.from('documents').upload(filePath,file,{upsert:false});if(r.error)throw r.error;uploaded.push(['documents',filePath])}if(img?.size){imagePath=`${crypto.randomUUID()}/${safeFileName(img.name)}`;const r=await db.storage.from('covers').upload(imagePath,img,{upsert:false,contentType:img.type});if(r.error)throw r.error;uploaded.push(['covers',imagePath]);imageUrl=db.storage.from('covers').getPublicUrl(imagePath).data.publicUrl}const payload={title:String(f.get('title')).trim(),description:String(f.get('description')).trim(),grade:f.get('grade'),category:f.get('category'),file_path:filePath,image_path:imagePath,image_url:imageUrl};const result=p?await db.from('posts').update(payload).eq('id',p.id):await db.from('posts').insert(payload);if(result.error)throw result.error;closeModal();await loadPosts();render();if(p){if(file?.size&&p.file_path)await db.storage.from('documents').remove([p.file_path]);if(img?.size&&p.image_path)await db.storage.from('covers').remove([p.image_path])}}catch(err){msg.textContent='Không lưu được: '+err.message;for(const [bucket,path] of uploaded)await db.storage.from(bucket).remove([path])}finally{button.disabled=false}}
