@@ -11,7 +11,91 @@ function render(){const shown=filterPosts(posts,filters);app.innerHTML=`<header>
 function updateResults(){const value=document.querySelector('#search')?.value||'';filters.q=value;render();document.querySelector('#search')?.focus()}
 function showModal(html){document.querySelector('#modal').innerHTML=`<div class="overlay"><div class="dialog"><button class="close" id="close">✕</button>${html}</div></div>`;document.querySelector('#close').onclick=closeModal;document.querySelector('.overlay').addEventListener('click',e=>{if(e.target.classList.contains('overlay'))closeModal()})}function closeModal(){document.querySelector('#modal').innerHTML=''}
 async function openPost(id){const p=posts.find(x=>String(x.id)===id);if(!p)return;selected=p;showModal(`<h2>${esc(p.title)}</h2><img class="detailimg" src="${esc(p.image_url||placeholder)}" alt="Ảnh bài đăng"/><p>${esc(p.description||'')}</p><p><b>Lớp:</b> ${esc(p.grade)} · <b>Danh mục:</b> ${esc(p.category)}</p><div class="actions"><button id="view" class="primary">👁 Xem tài liệu</button><button id="download">⬇ Tải tài liệu</button>${isAdmin?'<button id="edit">✎ Sửa</button><button id="delete" class="danger">Xóa</button>':''}</div><p id="msg"></p>`);document.querySelector('#view').onclick=()=>fileAction(p,false);document.querySelector('#download').onclick=()=>fileAction(p,true);if(isAdmin){document.querySelector('#edit').onclick=()=>openEditor(p);document.querySelector('#delete').onclick=()=>removePost(p)}}
-async function fileAction(p,download){const msg=document.querySelector('#msg');if(!db||!p.file_path){msg.textContent='Bài mẫu chưa có tệp đính kèm.';return}const {data,error}=await db.storage.from('documents').createSignedUrl(p.file_path,120,download?{download:true}:{});if(error){msg.textContent='Không mở được tệp: '+error.message;return}window.open(data.signedUrl,'_blank','noopener,noreferrer')}
+
+async function fileAction(p, download) {
+  const msg = document.querySelector('#msg');
+
+  if (!db || !p.file_path) {
+    msg.textContent = 'Tài liệu chưa có tệp đính kèm.';
+    return;
+  }
+
+  const { data, error } = await db.storage
+    .from('documents')
+    .createSignedUrl(
+      p.file_path,
+      120,
+      download ? { download: true } : {}
+    );
+
+  if (error) {
+    msg.textContent = 'Không mở được tệp: ' + error.message;
+    return;
+  }
+
+  const url = data.signedUrl;
+
+  if (download) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  const ext = p.file_path.split('.').pop().toLowerCase();
+
+  if (ext === 'docx') {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Không đọc được file');
+
+      const buffer = await response.arrayBuffer();
+      const mammoth = await import(
+        'https://esm.sh/mammoth@1.11.0/mammoth.browser'
+      );
+
+      const result = await mammoth.convertToHtml({
+        arrayBuffer: buffer
+      });
+
+      const purifier = await import(
+        'https://esm.sh/dompurify@3.2.6'
+      );
+
+      const cleanHtml = purifier.default.sanitize(result.value);
+
+      const viewer = document.createElement('div');
+      viewer.style.cssText =
+        'max-height:65vh;overflow:auto;padding:16px;' +
+        'background:white;line-height:1.6';
+
+      viewer.innerHTML = cleanHtml;
+
+      const title = document.createElement('h2');
+      title.textContent = p.title || 'Xem tài liệu Word';
+
+      const container = document.createElement('div');
+      container.append(title, viewer);
+
+      const existingModal = document.querySelector('#modal');
+
+      if (existingModal) {
+        existingModal.replaceChildren(container);
+      } else {
+        const popup = window.open('', '_blank');
+        if (!popup) throw new Error('Trình duyệt chặn cửa sổ');
+
+        popup.document.title = title.textContent;
+        popup.document.body.append(
+          popup.document.importNode(container, true)
+        );
+      }
+    } catch (err) {
+      msg.textContent = 'Không xem được Word: ' + err.message;
+    }
+    return;
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 function openLogin(){if(!db){showModal('<h2>Chưa kết nối Supabase</h2><p>Hãy cấu hình thông tin dự án theo README.</p>');return}showModal('<h2>Đăng nhập quản trị</h2><form id="loginform"><label>Email</label><input type="email" name="email" required/><label>Mật khẩu</label><input type="password" name="password" required/><button class="primary">Đăng nhập</button><p id="msg"></p></form>');document.querySelector('#loginform').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)document.querySelector('#msg').textContent=error.message;else{closeModal();await refreshAuth();render();if(isAdmin)openAdmin();else alert('Tài khoản này không có quyền quản trị.')}}}
 async function logout(){await db.auth.signOut();await refreshAuth();render()}
 
