@@ -1,0 +1,1 @@
+{"name":"kho-hoc-lieu-so","version":"1.0.0","type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","test":"node --test"},"dependencies":{"@supabase/supabase-js":"^2.57.0","vite":"^7.1.0"},"devDependencies":{}}

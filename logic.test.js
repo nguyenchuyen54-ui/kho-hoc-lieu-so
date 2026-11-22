@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {filterPosts,safeFileName,validFile} from './logic.js';
+test('filters by grade, category and Vietnamese query',()=>{const posts=[{title:'Kế hoạch chủ nhiệm',grade:'Lớp 1',category:'Kế hoạch chủ nhiệm'},{title:'Toán',grade:'Lớp 2',category:'Bài giảng Toán'}];assert.equal(filterPosts(posts,{grade:'Lớp 1',q:'CHỦ NHIỆM'}).length,1);assert.equal(filterPosts(posts,{category:'Bài giảng Toán'}).length,1)});
+test('file name is path safe',()=>assert.equal(safeFileName('../bài giảng.pdf'),'.._bai_giang.pdf'));
+test('rejects unsupported and oversized files',()=>{assert.equal(validFile({name:'x.exe',size:10}),false);assert.equal(validFile({name:'x.pdf',size:21*1024*1024}),false);assert.equal(validFile({name:'x.pdf',size:10}),true)});
