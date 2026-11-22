@@ -12,89 +12,215 @@ function updateResults(){const value=document.querySelector('#search')?.value||'
 function showModal(html){document.querySelector('#modal').innerHTML=`<div class="overlay"><div class="dialog"><button class="close" id="close">✕</button>${html}</div></div>`;document.querySelector('#close').onclick=closeModal;document.querySelector('.overlay').addEventListener('click',e=>{if(e.target.classList.contains('overlay'))closeModal()})}function closeModal(){document.querySelector('#modal').innerHTML=''}
 async function openPost(id){const p=posts.find(x=>String(x.id)===id);if(!p)return;selected=p;showModal(`<h2>${esc(p.title)}</h2><img class="detailimg" src="${esc(p.image_url||placeholder)}" alt="Ảnh bài đăng"/><p>${esc(p.description||'')}</p><p><b>Lớp:</b> ${esc(p.grade)} · <b>Danh mục:</b> ${esc(p.category)}</p><div class="actions"><button id="view" class="primary">👁 Xem tài liệu</button><button id="download">⬇ Tải tài liệu</button>${isAdmin?'<button id="edit">✎ Sửa</button><button id="delete" class="danger">Xóa</button>':''}</div><p id="msg"></p>`);document.querySelector('#view').onclick=()=>fileAction(p,false);document.querySelector('#download').onclick=()=>fileAction(p,true);if(isAdmin){document.querySelector('#edit').onclick=()=>openEditor(p);document.querySelector('#delete').onclick=()=>removePost(p)}}
 
+
 async function fileAction(p, download) {
   const msg = document.querySelector('#msg');
 
   if (!db || !p.file_path) {
-    msg.textContent = 'Tài liệu chưa có tệp đính kèm.';
+    if (msg) msg.textContent = 'Tài liệu chưa có tệp đính kèm.';
     return;
   }
 
-  const { data, error } = await db.storage
-    .from('documents')
-    .createSignedUrl(
-      p.file_path,
-      120,
-      download ? { download: true } : {}
-    );
-
-  if (error) {
-    msg.textContent = 'Không mở được tệp: ' + error.message;
-    return;
+  if (msg) {
+    msg.textContent = download
+      ? 'Đang chuẩn bị tải tài liệu...'
+      : 'Đang mở tài liệu, vui lòng chờ...';
   }
 
-  const url = data.signedUrl;
-
-  if (download) {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-
-  const ext = p.file_path.split('.').pop().toLowerCase();
-
-  if (ext === 'docx') {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Không đọc được file');
-
-      const buffer = await response.arrayBuffer();
-      const mammoth = await import(
-        'https://esm.sh/mammoth@1.11.0/mammoth.browser'
+  try {
+    const { data, error } = await db.storage
+      .from('documents')
+      .createSignedUrl(
+        p.file_path,
+        300,
+        download ? { download: true } : {}
       );
 
-      const result = await mammoth.convertToHtml({
-        arrayBuffer: buffer
+    if (error) throw error;
+
+    const signedUrl = data.signedUrl;
+
+    if (download) {
+      const link = document.createElement('a');
+      link.href = signedUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (msg) msg.textContent = '';
+      return;
+    }
+
+    const ext = p.file_path.split('.').pop().toLowerCase();
+
+    // Xem tài liệu Word DOCX trực tiếp trên website
+    if (ext === 'docx') {
+      await loadPreviewScript(
+        'https://cdn.jsdelivr.net/npm/mammoth@1.9.1/mammoth.browser.min.js',
+        'mammoth'
+      );
+
+      await loadPreviewScript(
+        'https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js',
+        'DOMPurify'
+      );
+
+      const response = await fetch(signedUrl);
+
+      if (!response.ok) {
+        throw new Error('Không đọc được tệp Word.');
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      const result = await window.mammoth.convertToHtml({
+        arrayBuffer: arrayBuffer
       });
 
-      const purifier = await import(
-        'https://esm.sh/dompurify@3.2.6'
+      const cleanHtml = window.DOMPurify.sanitize(result.value);
+
+      const title = esc(p.title || 'Xem tài liệu Word');
+
+      showModal(`
+        <h2>${title}</h2>
+        <p style="color:#666;font-size:14px">
+          Bản xem trước tài liệu Word
+        </p>
+        <div
+          class="word-preview"
+          style="
+            max-height:65vh;
+            overflow:auto;
+            padding:20px;
+            background:#fff;
+            color:#222;
+            line-height:1.6;
+            border:1px solid #ddd;
+            border-radius:8px;
+            overflow-wrap:anywhere;
+          "
+        >${cleanHtml}</div>
+        <p style="font-size:13px;color:#666">
+          Lưu ý: Bản xem trước có thể khác định dạng Word gốc.
+        </p>
+        <button id="back-to-post" class="primary">
+          Quay lại tài liệu
+        </button>
+      `);
+
+      const backButton = document.querySelector('#back-to-post');
+
+      if (backButton) {
+        backButton.onclick = () => openPost(String(p.id));
+      }
+
+      return;
+    }
+
+    // Xem PDF và các tệp mà trình duyệt hỗ trợ
+    if (ext === 'pdf') {
+      const response = await fetch(signedUrl);
+
+      if (!response.ok) {
+        throw new Error('Không đọc được tệp PDF.');
+      }
+
+      const blob = await response.blob();
+      const pdfUrl = URL.createObjectURL(
+        new Blob([blob], { type: 'application/pdf' })
       );
 
-      const cleanHtml = purifier.default.sanitize(result.value);
+      showModal(`
+        <h2>${esc(p.title || 'Xem tài liệu PDF')}</h2>
+        <iframe
+          id="pdf-preview"
+          title="Xem tài liệu PDF"
+          style="width:100%;height:65vh;border:0"
+        ></iframe>
+      `);
 
-      const viewer = document.createElement('div');
-      viewer.style.cssText =
-        'max-height:65vh;overflow:auto;padding:16px;' +
-        'background:white;line-height:1.6';
+      const frame = document.querySelector('#pdf-preview');
+      frame.src = pdfUrl;
 
-      viewer.innerHTML = cleanHtml;
-
-      const title = document.createElement('h2');
-      title.textContent = p.title || 'Xem tài liệu Word';
-
-      const container = document.createElement('div');
-      container.append(title, viewer);
-
-      const existingModal = document.querySelector('#modal');
-
-      if (existingModal) {
-        existingModal.replaceChildren(container);
-      } else {
-        const popup = window.open('', '_blank');
-        if (!popup) throw new Error('Trình duyệt chặn cửa sổ');
-
-        popup.document.title = title.textContent;
-        popup.document.body.append(
-          popup.document.importNode(container, true)
-        );
+      const closeButton = document.querySelector('#close');
+      if (closeButton) {
+        closeButton.addEventListener('click', () => {
+          URL.revokeObjectURL(pdfUrl);
+        }, { once: true });
       }
-    } catch (err) {
-      msg.textContent = 'Không xem được Word: ' + err.message;
-    }
-    return;
-  }
 
-  window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      showModal(`
+        <h2>${esc(p.title || 'Xem hình ảnh')}</h2>
+        <img
+          src="${esc(signedUrl)}"
+          alt="Nội dung tài liệu"
+          style="max-width:100%;height:auto"
+        />
+      `);
+      return;
+    }
+
+    if (ext === 'mp4') {
+      showModal(`
+        <h2>${esc(p.title || 'Xem video')}</h2>
+        <video
+          src="${esc(signedUrl)}"
+          controls
+          playsinline
+          style="width:100%;max-height:65vh"
+        ></video>
+      `);
+      return;
+    }
+
+    // Các định dạng chưa hỗ trợ xem trực tiếp
+    if (msg) {
+      msg.textContent =
+        'Định dạng này chưa hỗ trợ xem trực tiếp. ' +
+        'Vui lòng chọn "Tải tài liệu" để mở bằng ứng dụng phù hợp.';
+    }
+
+  } catch (err) {
+    console.error('Lỗi mở tài liệu:', err);
+
+    const currentMsg = document.querySelector('#msg');
+    if (currentMsg) {
+      currentMsg.textContent =
+        'Không mở được tài liệu: ' + (err.message || 'Lỗi không xác định.');
+    } else {
+      alert('Không mở được tài liệu: ' + err.message);
+    }
+  }
+}
+
+// Nạp thư viện hỗ trợ xem Word khi cần
+function loadPreviewScript(src, globalName) {
+  if (window[globalName]) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+
+    script.onload = () => {
+      if (window[globalName]) {
+        resolve();
+      } else {
+        reject(new Error('Không khởi tạo được ' + globalName));
+      }
+    };
+
+    script.onerror = () => {
+      reject(new Error('Không tải được thư viện ' + globalName));
+    };
+
+    document.head.appendChild(script);
+  });
 }
 function openLogin(){if(!db){showModal('<h2>Chưa kết nối Supabase</h2><p>Hãy cấu hình thông tin dự án theo README.</p>');return}showModal('<h2>Đăng nhập quản trị</h2><form id="loginform"><label>Email</label><input type="email" name="email" required/><label>Mật khẩu</label><input type="password" name="password" required/><button class="primary">Đăng nhập</button><p id="msg"></p></form>');document.querySelector('#loginform').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)document.querySelector('#msg').textContent=error.message;else{closeModal();await refreshAuth();render();if(isAdmin)openAdmin();else alert('Tài khoản này không có quyền quản trị.')}}}
 async function logout(){await db.auth.signOut();await refreshAuth();render()}
