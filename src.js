@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';import {grades,categories,filterPosts,safeFileName,validFile} from './logic.js';
+import { createClient } from '@supabase/supabase-js';import {grades,categories,filterPosts,safeFileName,validFile} from './logic.js';
 // Điền URL và khóa publishable/anon của Supabase vào hai giá trị dưới đây khi sẵn sàng.
 const url = import.meta.env.VITE_SUPABASE_URL?.trim() || '';
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || '';
